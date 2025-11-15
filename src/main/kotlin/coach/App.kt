@@ -1,5 +1,11 @@
 package coach
 
+import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
+import arrow.core.getOrElse
+
 import coach.chess.PgnParser
 import coach.export.ExportService
 import coach.lichess.LichessClient
@@ -25,7 +31,6 @@ fun main(): Unit = runBlocking {
     val lichessClient = LichessClient(lichessToken)
     val pgn = lichessClient.fetchLastGamesPgn(username, maxGames)
         .getOrElse {
-            it.printStackTrace()
             error("Failed to fetch games from Lichess: ${it.message}")
         }
 
@@ -48,13 +53,8 @@ fun main(): Unit = runBlocking {
         horizonWeeks = horizonWeeks
     )
 
-    val jsonPath = Paths.get("training-plan.json")
-    val mdPath = Paths.get("training-plan.md")
-
-    ExportService.writeJson(plan, jsonPath)
-    ExportService.writeMarkdown(plan, mdPath)
-
+    val (jsonPath, mdPath) = ExportService.export(plan)
     println("Wrote training plan to:")
-    println("  JSON: ${jsonPath.toAbsolutePath()}")
-    println("  Markdown: ${mdPath.toAbsolutePath()}")
+    println("  $jsonPath")
+    println("  $mdPath")
 }

@@ -1,22 +1,26 @@
 # Gradle
 .gradle/
 build/
-out/
 
-# IntelliJ IDEA
+# IntelliJ / IDEA
 .idea/
 *.iml
-*.ipr
-*.iws
+out/
 
-# Kotlin/Java
+# Kotlin / Java artifacts
 *.class
+*.jar
+
+# Logs
 *.log
 
-# OS cruft
-.DS_Store
-Thumbs.db
+# Local environment / secrets
+.env
+env.sh
+env.idea
 
-# Run outputs
-training-plan.json
-training-plan.md
+# Generated training plans
+output/
+
+# macOS
+.DS_Store

@@ -16,7 +16,7 @@ import kotlinx.serialization.decodeFromString
 
 class OpenAIClient(
     private val apiKey: String,
-    private val model: String = "gpt-5.1-chat"
+    private val model: String = "gpt-5.1"
 ) {
     private val client = HttpClientFactory.default
     private val json = Json {
@@ -33,22 +33,23 @@ class OpenAIClient(
         val batchJson = json.encodeToString(batch)
 
         val systemPrompt = """
-            You are a chess coach helping an adult improver.
+    You are a chess coach helping an adult improver.
 
-            The user plays mostly online rapid games and has about 30 minutes per day for structured training.
-            You receive:
-            1. A GameBatch JSON describing their recent games.
-            2. Their current rating and target rating.
+    The user plays mostly online rapid games and has about 30 minutes per day for structured training.
+    You receive:
+    1. A GameBatch JSON describing their recent games.
+    2. Their current rating and target rating.
 
-            Your job:
-            - Identify their top recurring weaknesses from the GameBatch.
-            - Design a concrete training plan for the next horizonWeeks within a 30-min/day budget.
-            - Prioritize reduction of blunders, tactics, basic openings (simple principled repertoire),
-              and fundamental endgames/strategy.
+    Your job:
+    - Identify their top recurring weaknesses from the GameBatch.
+    - Design a concrete training plan for the next horizonWeeks within a 30-min/day budget.
+    - Prioritize reduction of blunders, tactics, basic openings (simple principled repertoire),
+      and fundamental endgames/strategy.
+    - Populate the `notes` field with 2–4 short bullet points (≤150 words total) of meta-advice on how to follow the plan.
 
-            You MUST respond ONLY with a TrainingPlan JSON object matching the provided JSON Schema.
-            Do not include any extra text or commentary outside the JSON.
-        """.trimIndent()
+    You MUST respond ONLY with a TrainingPlan JSON object matching the provided JSON Schema.
+    Do not include any extra text or commentary outside the JSON.
+""".trimIndent()
 
         val userPrompt = """
             Current rating: $currentRating
@@ -181,10 +182,11 @@ class OpenAIClient(
                 }
             }
             putJsonObject("notes") {
-                putJsonArray("type") {
-                    add(JsonPrimitive("string"))
-                    add(JsonPrimitive("null"))
-                }
+                put("type", JsonPrimitive("string"))
+                put(
+                    "description",
+                    JsonPrimitive("2–4 bullet points (≤150 words) with key coaching advice and meta-comments about how to follow the plan.")
+                )
             }
         }
         putJsonArray("required") {
@@ -194,6 +196,7 @@ class OpenAIClient(
             add(JsonPrimitive("summary"))
             add(JsonPrimitive("focusAreas"))
             add(JsonPrimitive("dailySchedule"))
+            add(JsonPrimitive("notes"))   // <- added
         }
         put("additionalProperties", JsonPrimitive(false))
     }

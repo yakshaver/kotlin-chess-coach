@@ -1,3 +1,6 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     kotlin("jvm") version "2.0.0"
     kotlin("plugin.serialization") version "2.0.0"
@@ -20,9 +23,24 @@ dependencies {
     implementation("io.arrow-kt:arrow-core:1.2.4")
 
     // kchesslib (PGN parsing)
-    implementation("io.github.cvb941:kchesslib:0.7.0")
+    implementation("io.github.cvb941:kchesslib:1.0.3")
 
     testImplementation(kotlin("test"))
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+tasks.withType<KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
+    }
 }
 
 application {

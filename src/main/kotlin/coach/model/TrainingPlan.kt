@@ -10,7 +10,7 @@ data class TrainingPlan(
     val summary: String,
     val focusAreas: List<String>,
     val dailySchedule: List<DayPlan>,
-    val notes: String? = null
+    val notes: String
 )
 
 @Serializable
