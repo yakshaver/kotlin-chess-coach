@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Kotlin/Java
+*.class
+*.log
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Run outputs
+training-plan.json
+training-plan.md
