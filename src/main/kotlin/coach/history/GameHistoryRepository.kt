@@ -1,7 +1,6 @@
 package coach.history
 
 import coach.model.GameBatch
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
