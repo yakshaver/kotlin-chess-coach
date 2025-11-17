@@ -1,18 +1,12 @@
 package coach
 
-import java.io.File
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-
 import arrow.core.getOrElse
-
 import coach.chess.PgnParser
 import coach.export.ExportService
+import coach.history.GameHistoryRepository
 import coach.lichess.LichessClient
-import coach.model.Site
 import coach.openai.OpenAIClient
 import kotlinx.coroutines.runBlocking
-import java.nio.file.Paths
 
 fun main(): Unit = runBlocking {
     val username = System.getenv("LICHESS_USER")
@@ -35,10 +29,19 @@ fun main(): Unit = runBlocking {
         }
 
     println("Parsing PGN into GameBatch...")
-    val batch = PgnParser.parseBatchPgn(pgn, Site.LICHESS, username)
+    val batch = PgnParser.buildGameBatch(
+        player = username,
+        site = "lichess.org",
+        rawPgn = pgn
+    )
+
+    // after you have `batch`:
+    println("Appending games to history...")
+    val history = GameHistoryRepository.appendAndSave(batch)
+    println("History now contains ${history.games.size} games.")
 
     val currentRating =
-        batch.games.mapNotNull { it.yourRating }.lastOrNull()
+        batch.games.mapNotNull { it.playerRating }.lastOrNull()
             ?: System.getenv("CURRENT_RATING")?.toIntOrNull()
             ?: 800
 

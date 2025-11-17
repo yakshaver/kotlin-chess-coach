@@ -1,151 +1,177 @@
 package coach.chess
 
-import coach.model.Color
+import arrow.core.Option
+import arrow.core.none
+import arrow.core.some
 import coach.model.GameBatch
-import coach.model.GameSummary
-import coach.model.Result
-import coach.model.Site
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
+import coach.model.ChessGame
+import coach.model.GameResult
+import coach.model.PlayerColor
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
+import com.github.bhlangonijr.chesslib.pgn.PgnHolder
+import com.github.bhlangonijr.chesslib.game.Game as LibGame
 
 object PgnParser {
 
-    private val dateFormatter: DateTimeFormatter =
-        DateTimeFormatter.ISO_INSTANT.withZone(ZoneOffset.UTC)
-
     /**
-     * Parse a PGN string containing one or more games (like Lichess exports) into a GameBatch.
-     *
-     * This is a deliberately simple parser:
-     * - Splits the text into game chunks.
-     * - Uses regex to read header tags like [White "..."], [Black "..."], [Result "..."], etc.
-     * - Does *not* try to interpret moves — it just counts them roughly.
+     * Pure top-level API: build a GameBatch from raw PGN.
+     * Internally uses kchesslib/chesslib to parse PGN robustly.
      */
-    fun parseBatchPgn(
-        pgn: String,
-        site: Site,
-        player: String
+    fun buildGameBatch(
+        player: String,
+        site: String = "lichess.org",
+        rawPgn: String
     ): GameBatch {
-        val gamesPgn = splitIntoGames(pgn)
-        val summaries = gamesPgn.mapIndexed { index, gamePgn ->
-            toGameSummary(index, gamePgn, site, player)
+        val libGames = parseWithKChessLib(rawPgn)
+        val originals = splitIntoGamesText(rawPgn)
+        val games = libGames.mapIndexed { idx, libGame ->
+            val pgnText = originals.getOrNull(idx) ?: runCatching { libGame.toPgn(false, false) }.getOrDefault("")
+            toChessGame(idx, libGame, pgnText, player, site)
         }
-
-        return GameBatch(
-            player = player,
-            site = site,
-            generatedAtUtc = dateFormatter.format(Instant.now()),
-            games = summaries
-        )
+        return GameBatch(player = player, site = site, games = games)
     }
 
-    // --- Internal helpers ---
+    // --- Parsing (side-effect at the edge: temp file I/O) -------------------
 
-    private fun splitIntoGames(pgn: String): List<String> {
-        // Normalize line endings
-        val normalized = pgn.replace("\r\n", "\n")
+    private fun parseWithKChessLib(rawPgn: String): List<LibGame> {
+        val temp = Files.createTempFile("pgn_batch_", ".pgn").toFile()
+        try {
+            Files.writeString(temp.toPath(), rawPgn, StandardOpenOption.TRUNCATE_EXISTING)
+            val holder = PgnHolder(temp.absolutePath)
+            holder.loadPgn()
+            return holder.games.toList()
+        } finally {
+            runCatching { temp.delete() }
+        }
+    }
 
-        // Naive split: a new game starts where we see "[Event"
-        val rawParts = normalized
+    private fun splitIntoGamesText(pgn: String): List<String> =
+        pgn.replace("\r\n", "\n")
             .split("\n\n[Event")
             .filter { it.isNotBlank() }
-
-        return rawParts.mapIndexed { index, part ->
-            val trimmed = part.trim()
-            if (index == 0 && trimmed.startsWith("[Event")) {
-                trimmed
-            } else {
-                "[Event\n$trimmed"
+            .mapIndexed { index, part ->
+                val trimmed = part.trim()
+                if (index == 0 && trimmed.startsWith("[Event")) trimmed else "[Event\n$trimmed"
             }
-        }.filter { it.isNotBlank() }
-    }
+            .filter { it.isNotBlank() }
 
-    private fun toGameSummary(
-        index: Int,
-        gamePgn: String,
-        site: Site,
-        player: String
-    ): GameSummary {
-        val headers = parseHeaders(gamePgn)
-        val movesSection = extractMovesSection(gamePgn)
+    // --- Pure mapping helpers ----------------------------------------------
+
+    private fun toChessGame(index: Int, @Suppress("UNUSED_PARAMETER") game: LibGame, pgnText: String, player: String, site: String): ChessGame {
+        val headers: Map<String, String> = parseHeadersFromText(pgnText)
 
         val white = headers["White"]
         val black = headers["Black"]
 
         val color = when {
-            white.equals(player, ignoreCase = true) -> Color.WHITE
-            black.equals(player, ignoreCase = true) -> Color.BLACK
-            else -> Color.WHITE // default if username mismatch
+            white.equals(player, ignoreCase = true) -> PlayerColor.WHITE
+            black.equals(player, ignoreCase = true) -> PlayerColor.BLACK
+            else -> PlayerColor.WHITE
         }
 
-        val resultTag = headers["Result"]
-        val result = when {
-            resultTag == "1-0" && color == Color.WHITE -> Result.WIN
-            resultTag == "0-1" && color == Color.BLACK -> Result.WIN
-            resultTag == "1/2-1/2" -> Result.DRAW
-            resultTag == "1-0" || resultTag == "0-1" -> Result.LOSS
-            else -> Result.OTHER
-        }
+        val result = resolveResult(headers["Result"], color)
 
-        val openingEco = headers["ECO"]
-        val openingName = headers["Opening"]
-        val timeControl = headers["TimeControl"] ?: "unknown"
+        val opening = headers["ECO"] ?: headers["Opening"]
 
-        val yourRating = when (color) {
-            Color.WHITE -> headers["WhiteElo"]?.toIntOrNull()
-            Color.BLACK -> headers["BlackElo"]?.toIntOrNull()
+        val rated = headers["Event"]?.contains("Rated", ignoreCase = true) == true
+
+        val timeControlRaw = headers["TimeControl"]
+        val timeControl = normalizeTimeControl(timeControlRaw)
+
+        val speed = inferSpeed(headers["Event"], timeControl)
+
+        val playerRating = when (color) {
+            PlayerColor.WHITE -> headers["WhiteElo"]?.toIntOrNull()
+            PlayerColor.BLACK -> headers["BlackElo"]?.toIntOrNull()
         }
         val opponentRating = when (color) {
-            Color.WHITE -> headers["BlackElo"]?.toIntOrNull()
-            Color.BLACK -> headers["WhiteElo"]?.toIntOrNull()
+            PlayerColor.WHITE -> headers["BlackElo"]?.toIntOrNull()
+            PlayerColor.BLACK -> headers["WhiteElo"]?.toIntOrNull()
         }
 
-        val movesCount = approximateMovesCount(movesSection)
-        val date = headers["Date"] ?: "????.??.??"
+        val opponent = when (color) {
+            PlayerColor.WHITE -> black ?: "unknown"
+            PlayerColor.BLACK -> white ?: "unknown"
+        }
 
-        val id = "${site.name.lowercase()}:${index + 1}"
+        val startedAt = buildUtcDateTime(headers).getOrNull()
 
-        return GameSummary(
+        val id = extractLichessId(headers).getOrElse { "${site}:${index + 1}" }
+
+        return ChessGame(
             id = id,
-            timeControl = timeControl,
-            rated = headers["Event"]?.contains("Rated", ignoreCase = true) == true,
-            perfType = null, // could be inferred from time control later
-            result = result,
+            rated = rated,
+            timeControl = timeControl ?: "unknown",
+            speed = speed ?: "unknown",
             color = color,
+            result = result,
+            opponent = opponent,
+            playerRating = playerRating,
             opponentRating = opponentRating,
-            yourRating = yourRating,
-            openingEco = openingEco,
-            openingName = openingName,
-            movesCount = movesCount,
-            utcDate = date,
-            pgn = gamePgn
+            opening = opening,
+            pgn = pgnText,
+            startedAt = startedAt
         )
     }
 
-    private fun parseHeaders(gamePgn: String): Map<String, String> {
-        // Matches lines like: [Key "Value"]
+    private fun parseHeadersFromText(text: String): Map<String, String> {
         val regex = Regex("""\[(\w+)\s+"([^"]*)"]""")
-        return regex.findAll(gamePgn)
-            .associate { match ->
-                val key = match.groupValues[1]
-                val value = match.groupValues[2]
-                key to value
+        return regex.findAll(text).associate { m -> m.groupValues[1] to m.groupValues[2] }
+    }
+
+    private fun resolveResult(resultTag: String?, color: PlayerColor): GameResult = when (resultTag) {
+        "1-0" -> if (color == PlayerColor.WHITE) GameResult.WIN else GameResult.LOSS
+        "0-1" -> if (color == PlayerColor.BLACK) GameResult.WIN else GameResult.LOSS
+        "1/2-1/2" -> GameResult.DRAW
+        "*" -> GameResult.UNKNOWN
+        else -> GameResult.UNKNOWN
+    }
+
+    private fun normalizeTimeControl(tc: String?): String? {
+        if (tc.isNullOrBlank()) return null
+        val parts = tc.split("+")
+        val base = parts.getOrNull(0)?.toIntOrNull() ?: return tc
+        val inc = parts.getOrNull(1)
+        return if (base % 60 == 0) {
+            val minutes = base / 60
+            if (inc != null) "$minutes+${inc}" else "$minutes+0"
+        } else tc
+    }
+
+    private fun inferSpeed(event: String?, timeControl: String?): String? {
+        val e = event?.lowercase()
+        if (e != null) {
+            when {
+                "bullet" in e -> return "bullet"
+                "blitz" in e -> return "blitz"
+                "rapid" in e -> return "rapid"
+                "classical" in e -> return "classical"
             }
+        }
+        val minutes = timeControl?.substringBefore('+')?.toIntOrNull()
+        return when {
+            minutes == null -> null
+            minutes < 3 -> "bullet"
+            minutes <= 8 -> "blitz"
+            minutes <= 25 -> "rapid"
+            else -> "classical"
+        }
     }
 
-    private fun extractMovesSection(gamePgn: String): String {
-        // Moves start after the blank line following the headers
-        val parts = gamePgn.split("\n\n", limit = 2)
-        return if (parts.size == 2) parts[1].trim() else ""
+    private fun buildUtcDateTime(headers: Map<String, String>): Option<String> {
+        val (d, t) = headers["UTCDate"] to headers["UTCTime"]
+        return if (!d.isNullOrBlank() && !t.isNullOrBlank()) {
+            val yyyyMmDd = d.replace('.', '-')
+            val time = t.take(8)
+            "${yyyyMmDd}T${time}Z".some()
+        } else none()
     }
 
-    private fun approximateMovesCount(moves: String): Int {
-        if (moves.isBlank()) return 0
-        // Very rough: count move numbers like "1.", "2.", etc.
-        val moveNumberRegex = Regex("""\b\d+\.""")
-        val moveNumbers = moveNumberRegex.findAll(moves).count()
-        // Each move number typically corresponds to 1–2 half-moves; we’ll just double it as an approximation.
-        return moveNumbers * 2
-    }
+    private fun extractLichessId(headers: Map<String, String>): Result<String> =
+        runCatching {
+            val link = headers["Site"] ?: headers["Link"]
+            if (link.isNullOrBlank()) error("no link")
+            link.trim().removeSuffix("/").substringAfterLast('/')
+        }
 }

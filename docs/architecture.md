@@ -52,6 +52,18 @@ Help an adult improver climb toward ~**1500** as efficiently as possible, with a
    - Writes the `TrainingPlan` to:
      - `output/YYYY-MM-DD-HHmmss-training-plan.json`
      - `output/YYYY-MM-DD-HHmmss-training-plan.md`
+6. **Design & Implementation Principles (Summary)**
+   - Favor **functional programming**:
+       - Immutability by default.
+       - Pure functions for core logic (parsing, mapping, transformations).
+       - Side effects (I/O, network) pushed to the edges (e.g., App.kt, HTTP clients).
+
+   - Always accompany new core logic with **unit tests**:
+       - Test pure functions directly.
+       - Ensure tests are fast and deterministic.
+       - Tests must pass.
+
+For detailed coding and testing conventions, see `docs/engineering-guidelines.md`.
 
 ---
 
