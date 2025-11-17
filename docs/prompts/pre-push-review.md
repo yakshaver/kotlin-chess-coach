@@ -8,6 +8,7 @@ It assumes Junie can read:
 - `docs/engineering-guidelines.md`
 - `docs/architecture.md`
 - `CONTRIBUTING.md`
+- `docs/tech-debt.md`
 
 ---
 
@@ -31,7 +32,10 @@ You are acting as a **pre-push reviewer** for this project (`kotlin-chess-coach`
 
 First, read and follow:
 - .junie/guidelines.md
-(and any docs it references, such as docs/engineering-guidelines.md, docs/architecture.md, and CONTRIBUTING.md)
+- docs/engineering-guidelines.md
+- docs/architecture.md
+- CONTRIBUTING.md
+- docs/tech-debt.md
 
 Now review my *current, unpushed changes* and tell me if they’re ready to push.
 
@@ -94,4 +98,16 @@ Please do the following:
      - `./gradlew test`
      - and then `git push` if everything looks good.
 
-Do not edit or create any files related to secrets or generated output, and do not run git or shell commands. Focus on code, tests, and alignment with the project’s guidelines.
+8. Update docs/tech-debt.md
+   - Based on this review and the current diffs:
+     - Mark any items in `docs/tech-debt.md` as effectively completed (or clearly superseded) and suggest the minimal edits needed to reflect that.
+     - Add new technical-debt items for:
+       - Missing tests,
+       - Known-but-accepted shortcuts (e.g., temp-file parsing, simplistic de-dupe),
+       - Any refactors you are explicitly deferring.
+     - Organize new items under either:
+       - **Next Coding Session** (for urgent/near-term work), or
+       - The appropriate section under **Backlog**.
+   - When suggesting edits to `docs/tech-debt.md`, show the updated sections or file content so I can paste or apply them manually.
+
+Do not edit or create any files related to secrets or generated output, and do not run git or shell commands. Focus on code, tests, docs (especially docs/tech-debt.md), and alignment with the project’s guidelines.
