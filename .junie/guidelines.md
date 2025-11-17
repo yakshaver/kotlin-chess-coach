@@ -126,3 +126,6 @@ Junie should:
   - No secrets or generated output are being tracked.
 5. Suggest obvious cleanups (unused imports, debug logging, etc.).
 6. End with a short checklist and a reminder to run `./gradlew test`.
+
+For the detailed pre-push review prompt, see:
+- `docs/prompts/pre-push-review.md`
